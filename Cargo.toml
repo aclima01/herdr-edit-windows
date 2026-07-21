@@ -1,0 +1,38 @@
+[package]
+name = "herdr-edit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "A simple text editor in a herdr pane: file tree, syntax-highlighted editor, and an uncommitted-diff tab. Windows-only."
+authors = ["aclima01"]
+license = "MIT"
+repository = "https://github.com/aclima01/herdr-edit-windows"
+readme = "README.md"
+keywords = ["herdr", "tui", "editor", "syntax", "windows"]
+categories = ["command-line-utilities", "text-editors"]
+
+[[bin]]
+name = "herdr-edit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+crossterm = "0.29"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Dumps + fancy-regex only (pure-Rust): no onig C dep, no unmaintained yaml-load path.
+syntect = { version = "5.3.0", default-features = false, features = ["parsing", "regex-fancy", "dump-load", "plist-load"] }
+# default-features off drops `syntect-onig` (a C dep); `syntect-fancy` keeps the pure-Rust engine.
+two-face = { version = "0.5.1", default-features = false, features = ["syntect-fancy"] }
+unicode-width = "0.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+strip = true
+lto = "thin"

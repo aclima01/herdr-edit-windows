@@ -1,0 +1,4 @@
+/target
+# The pane binary is built locally for `herdr plugin link` dev and downloaded by
+# install.ps1 on a real install (Milestone 5); it is never committed.
+/bin

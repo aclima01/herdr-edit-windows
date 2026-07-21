@@ -1,0 +1,36 @@
+id = "aclima.edit"
+name = "herdr-edit"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+platforms = ["windows"]
+description = "A simple text editor in a herdr pane: file tree, syntax-highlighted editor, and an uncommitted-diff tab. Windows-only."
+
+# The edit pane runs the downloaded binary by absolute path under the plugin root: the pane's cwd
+# is the repo under edit (not the plugin root) and the binary isn't on PATH. `%HERDR_PLUGIN_ROOT:\\?\=%`
+# strips the \\?\ extended-length prefix so a path with spaces resolves under cmd. Single-quoted TOML
+# literal keeps the backslashes.
+[[panes]]
+id = "edit"
+title = "edit"
+placement = "split"
+command = ["cmd", "/d", "/c", '%HERDR_PLUGIN_ROOT:\\?\=%\bin\herdr-edit.exe']
+
+# On Windows herdr's `bash` is WSL, which can't see the Windows repo, so the action glue is
+# PowerShell. Each action opens, closes, or toggles the edit split beside the focused pane.
+[[actions]]
+id = "toggle"
+title = "edit: toggle editor"
+contexts = ["pane", "workspace"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", 'herdr\edit.ps1', "toggle"]
+
+[[actions]]
+id = "open"
+title = "edit: open editor"
+contexts = ["pane", "workspace"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", 'herdr\edit.ps1', "open"]
+
+[[actions]]
+id = "close"
+title = "edit: close editor"
+contexts = ["pane", "workspace"]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", 'herdr\edit.ps1', "close"]
