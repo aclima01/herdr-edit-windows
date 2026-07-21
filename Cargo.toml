@@ -27,6 +27,9 @@ syntect = { version = "5.3.0", default-features = false, features = ["parsing", 
 two-face = { version = "0.5.1", default-features = false, features = ["syntect-fancy"] }
 unicode-width = "0.2"
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints.rust]
 unsafe_code = "forbid"
 
