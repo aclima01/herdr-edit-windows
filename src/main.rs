@@ -6,6 +6,8 @@
 
 mod app;
 mod buffer;
+mod diff;
+mod git;
 mod herdr;
 mod highlight;
 mod tree;
@@ -58,6 +60,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
                 app.save();
                 return;
             }
+            KeyCode::Char('d') => {
+                app.toggle_diff();
+                return;
+            }
             _ => {}
         }
     }
@@ -84,13 +90,24 @@ fn handle_tree_key(app: &mut App, code: KeyCode) {
     }
 }
 
-/// Modeless editing: move the cursor, insert, delete, or leave to the tree.
+/// Editor-panel keys: scroll the diff when the diff tab is active, else modeless editing.
 fn handle_editor_key(app: &mut App, code: KeyCode) {
     if code == KeyCode::Esc {
         app.focus = Focus::Tree;
         return;
     }
     let Some(doc) = app.doc.as_mut() else { return };
+    if doc.tab == app::EditorTab::Diff {
+        let page = doc.diff_viewport_rows.saturating_sub(1).max(1);
+        match code {
+            KeyCode::Down => doc.diff_scroll_down(1),
+            KeyCode::Up => doc.diff_scroll_up(1),
+            KeyCode::PageDown => doc.diff_scroll_down(page),
+            KeyCode::PageUp => doc.diff_scroll_up(page),
+            _ => {}
+        }
+        return;
+    }
     let page = doc.viewport_rows.saturating_sub(1).max(1);
     match code {
         KeyCode::Left => doc.buffer.move_left(),

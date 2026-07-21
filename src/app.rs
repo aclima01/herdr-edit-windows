@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use crate::buffer::Buffer;
+use crate::diff::{self, DiffLine};
+use crate::git;
 use crate::herdr::Context;
 use crate::highlight::{Highlighter, Span};
 use crate::tree::Tree;
@@ -16,6 +18,13 @@ use crate::tree::Tree;
 pub enum Focus {
     Tree,
     Editor,
+}
+
+/// Which view the editor panel shows: the editable buffer, or the uncommitted diff.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorTab {
+    Editor,
+    Diff,
 }
 
 /// One opened document: the file path, the editable buffer, the scroll offset, and a cached
@@ -30,6 +39,12 @@ pub struct Document {
     pub viewport_rows: usize,
     highlight: Vec<Vec<Span>>,
     highlight_dirty: bool,
+    pub tab: EditorTab,
+    pub diff_lines: Vec<DiffLine>,
+    pub diff_scroll: usize,
+    pub diff_viewport_rows: usize,
+    /// A message shown in place of the diff: no changes, or not a repo.
+    pub diff_note: Option<String>,
 }
 
 impl Document {
@@ -44,6 +59,11 @@ impl Document {
             viewport_rows: 0,
             highlight: Vec::new(),
             highlight_dirty: true,
+            tab: EditorTab::Editor,
+            diff_lines: Vec::new(),
+            diff_scroll: 0,
+            diff_viewport_rows: 0,
+            diff_note: None,
         }
     }
 
@@ -90,6 +110,42 @@ impl Document {
         self.buffer.clear_modified();
         Ok(text.len())
     }
+
+    // --- diff tab ----------------------------------------------------------
+
+    /// Reload the uncommitted diff from disk. The diff compares the saved file against
+    /// `HEAD`, so unsaved buffer edits do not appear until saved. Sets `diff_note` when
+    /// there is nothing to show or the file is outside a repo.
+    pub fn reload_diff(&mut self) {
+        self.diff_lines.clear();
+        self.diff_scroll = 0;
+        self.diff_note = None;
+        let Some(path) = self.path.clone() else {
+            self.diff_note = Some("no file open".to_string());
+            return;
+        };
+        let dir = path.parent().unwrap_or(&path);
+        let Some(root) = git::toplevel(dir) else {
+            self.diff_note = Some("not a git repository".to_string());
+            return;
+        };
+        match git::diff_uncommitted(&root, &path) {
+            Ok(text) if text.trim().is_empty() => {
+                self.diff_note = Some("no uncommitted changes (save to update)".to_string());
+            }
+            Ok(text) => self.diff_lines = diff::parse(&text),
+            Err(e) => self.diff_note = Some(format!("git diff failed: {e}")),
+        }
+    }
+
+    pub fn diff_scroll_down(&mut self, n: usize) {
+        let max = self.diff_lines.len().saturating_sub(1);
+        self.diff_scroll = (self.diff_scroll + n).min(max);
+    }
+
+    pub fn diff_scroll_up(&mut self, n: usize) {
+        self.diff_scroll = self.diff_scroll.saturating_sub(n);
+    }
 }
 
 /// The whole editor: the herdr context, the file tree, the open document, and which panel
@@ -127,6 +183,23 @@ impl App {
         if let Some(doc) = self.doc.as_mut() {
             doc.ensure_highlight(&self.highlighter);
         }
+    }
+
+    /// Toggle the editor panel between the buffer and the uncommitted diff, focusing the
+    /// editor. Switching to the diff reloads it from disk so it reflects the latest save.
+    pub fn toggle_diff(&mut self) {
+        let Some(doc) = self.doc.as_mut() else {
+            self.status = "open a file first".to_string();
+            return;
+        };
+        match doc.tab {
+            EditorTab::Editor => {
+                doc.reload_diff();
+                doc.tab = EditorTab::Diff;
+            }
+            EditorTab::Diff => doc.tab = EditorTab::Editor,
+        }
+        self.focus = Focus::Editor;
     }
 
     /// Toggle focus between the tree and the editor.

@@ -8,7 +8,8 @@ use ratatui::text::{Line, Span as TuiSpan};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, Focus};
+use crate::app::{App, EditorTab, Focus};
+use crate::diff::DiffKind;
 use crate::tree::Node;
 
 const ACCENT: Color = Color::Rgb(0x89, 0xb4, 0xfa);
@@ -104,7 +105,11 @@ fn tree_row(node: &Node, selected: bool, focused: bool) -> Line<'static> {
 
 fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == Focus::Editor;
-    let block = panel_block("Editor", focused);
+    let active_tab = app.doc.as_ref().map_or(EditorTab::Editor, |d| d.tab);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(if focused { ACCENT } else { MUTED }))
+        .title(tab_strip(active_tab, focused));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -116,13 +121,18 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(MUTED),
             )),
             Line::from(TuiSpan::styled(
-                "  Tab switches focus between the tree and the editor.",
+                "  Tab switches focus; Ctrl+D shows the uncommitted diff.",
                 Style::default().fg(MUTED),
             )),
         ]);
         f.render_widget(hint, inner);
         return;
     };
+
+    if doc.tab == EditorTab::Diff {
+        render_diff_body(f, doc, inner);
+        return;
+    }
 
     doc.viewport_rows = inner.height as usize;
     let total = doc.buffer.line_count();
@@ -166,8 +176,59 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
+/// The editor panel's title: an " Editor │ Diff " strip, the active tab bright, the rest
+/// dimmed. When the panel is unfocused every chip dims.
+fn tab_strip(active: EditorTab, focused: bool) -> Line<'static> {
+    let chip = |label: &str, on: bool| {
+        let style = if on && focused {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else if on {
+            Style::default().fg(Color::Rgb(0xcd, 0xd6, 0xf4))
+        } else {
+            Style::default().fg(MUTED)
+        };
+        TuiSpan::styled(format!(" {label} "), style)
+    };
+    Line::from(vec![
+        chip("Editor", active == EditorTab::Editor),
+        TuiSpan::styled("│", Style::default().fg(MUTED)),
+        chip("Diff", active == EditorTab::Diff),
+    ])
+}
+
+/// Render the uncommitted diff: each line colored by its role, or a centered note when there
+/// is nothing to show.
+fn render_diff_body(f: &mut Frame, doc: &mut crate::app::Document, inner: Rect) {
+    if let Some(note) = &doc.diff_note {
+        let msg = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(TuiSpan::styled(format!("  {note}"), Style::default().fg(MUTED))),
+        ]);
+        f.render_widget(msg, inner);
+        return;
+    }
+    doc.diff_viewport_rows = inner.height as usize;
+    let total = doc.diff_lines.len();
+    let start = doc.diff_scroll.min(total.saturating_sub(1));
+    let end = (start + inner.height as usize).min(total);
+    let mut rows: Vec<Line> = Vec::with_capacity(end.saturating_sub(start));
+    for line in &doc.diff_lines[start..end] {
+        let color = match line.kind {
+            DiffKind::Add => Color::Rgb(0xa6, 0xe3, 0xa1),
+            DiffKind::Remove => Color::Rgb(0xf3, 0x8b, 0xa8),
+            DiffKind::Hunk => Color::Rgb(0x89, 0xdc, 0xeb),
+            DiffKind::Meta => MUTED,
+            DiffKind::Context => Color::Rgb(0xcd, 0xd6, 0xf4),
+        };
+        rows.push(Line::from(TuiSpan::styled(line.text.clone(), Style::default().fg(color))));
+    }
+    f.render_widget(Paragraph::new(rows), inner);
+}
+
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
+    let diff_active = app.doc.as_ref().is_some_and(|d| d.tab == EditorTab::Diff);
     let pos = match &app.doc {
+        Some(doc) if diff_active => format!(" diff · {} lines ", doc.diff_lines.len()),
         Some(doc) => format!(
             " {}:{} / {} ",
             doc.buffer.cursor_line + 1,
@@ -178,7 +239,8 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     };
     let hints = match app.focus {
         Focus::Tree => "  ↑/↓ move  →/Enter open  ← collapse  Tab editor  q quit",
-        Focus::Editor => "  type to edit  Ctrl+S save  Esc tree  Ctrl+Q quit",
+        Focus::Editor if diff_active => "  ↑/↓ scroll  Ctrl+D editor  Esc tree  Ctrl+Q quit",
+        Focus::Editor => "  type to edit  Ctrl+S save  Ctrl+D diff  Esc tree",
     };
     let footer = Line::from(vec![
         TuiSpan::styled(pos, Style::default().fg(MUTED)),
