@@ -29,7 +29,9 @@ impl Context {
             workspace_id: env::var("HERDR_WORKSPACE_ID").ok(),
             tab_id: env::var("HERDR_TAB_ID").ok(),
             pane_id: env::var("HERDR_PANE_ID").ok(),
-            plugin_root: env::var("HERDR_PLUGIN_ROOT").ok().map(strip_extended_prefix),
+            plugin_root: env::var("HERDR_PLUGIN_ROOT")
+                .ok()
+                .map(strip_extended_prefix),
             cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         }
     }

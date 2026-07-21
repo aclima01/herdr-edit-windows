@@ -1,0 +1,34 @@
+herdr-edit — credits and acknowledgements
+==========================================
+
+herdr-edit is original code (MIT, see LICENSE). It was written by studying the
+patterns of other herdr plugins rather than copying their source. This file
+records that lineage and the third-party libraries it builds on.
+
+Plugin packaging patterns
+-------------------------
+The plugin's Windows packaging — the `herdr-plugin.toml` manifest, the
+`herdr/edit.ps1` action glue, the `herdr/install.ps1` build step, and the
+`.github/workflows/release.yml` pipeline — follow the shape established by:
+
+  herdr-reviewr — https://github.com/persiyanov/herdr-reviewr
+  MIT License, Copyright (c) 2026 Dmitry Persiyanov
+
+The reviewr project was read to understand the herdr plugin host contract (the
+pane command, the actions, the `\\?\` extended-length path fix, and the release
+asset layout). No source files were copied; the implementations here are our own.
+
+Third-party libraries
+---------------------
+This binary links, at runtime, the following crates (each under its own license,
+see `cargo tree` and the crates' repositories for full texts):
+
+  ratatui, crossterm  — terminal UI and input          (MIT)
+  syntect             — syntax highlighting             (MIT)
+  two-face            — embedded syntect syntaxes/themes (MIT / bundled theme licenses)
+  ropey               — the text rope buffer            (MIT)
+  anyhow, serde, serde_json, unicode-width              (MIT / Apache-2.0)
+
+Syntax definitions and color themes are bundled by `two-face`; their individual
+licenses (Catppuccin, Nord, Dracula, Gruvbox, Solarized, and others) are carried
+by that crate.

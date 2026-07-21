@@ -22,7 +22,13 @@ pub struct Buffer {
 impl Buffer {
     /// Build from `text`, cursor at the start, unmodified.
     pub fn from_str(text: &str) -> Self {
-        Self { rope: Rope::from_str(text), cursor_line: 0, cursor_col: 0, goal_col: 0, modified: false }
+        Self {
+            rope: Rope::from_str(text),
+            cursor_line: 0,
+            cursor_col: 0,
+            goal_col: 0,
+            modified: false,
+        }
     }
 
     /// Total number of lines. A trailing newline yields a final empty line, editable like any other.

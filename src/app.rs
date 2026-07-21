@@ -49,7 +49,11 @@ pub struct Document {
 
 impl Document {
     fn new(path: Option<PathBuf>, title: String, text: &str) -> Self {
-        let ext = path.as_ref().and_then(|p| p.extension()).and_then(|e| e.to_str()).map(str::to_owned);
+        let ext = path
+            .as_ref()
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .map(str::to_owned);
         Self {
             path,
             title,
@@ -225,7 +229,11 @@ impl App {
         match std::fs::read_to_string(path) {
             Ok(raw) => {
                 let text = raw.replace("\r\n", "\n");
-                let title = path.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
+                let title = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
                 self.status = format!("opened {}", path.display());
                 self.doc = Some(Document::new(Some(path.to_path_buf()), title, &text));
                 self.focus = Focus::Editor;
@@ -245,6 +253,33 @@ impl App {
         match doc.save() {
             Ok(bytes) => self.status = format!("saved {} ({bytes} bytes)", doc.title),
             Err(e) => self.status = format!("save failed: {e}"),
+        }
+    }
+
+    /// Stage the open file into git's index (`git add`). If the diff tab is showing, reload
+    /// it so the staged change is reflected.
+    pub fn stage(&mut self) {
+        let Some(doc) = self.doc.as_mut() else {
+            self.status = "open a file to stage".to_string();
+            return;
+        };
+        let Some(path) = doc.path.clone() else {
+            self.status = "no file path to stage".to_string();
+            return;
+        };
+        let dir = path.parent().unwrap_or(&path);
+        let Some(root) = git::toplevel(dir) else {
+            self.status = "not a git repository".to_string();
+            return;
+        };
+        match git::stage(&root, &path) {
+            Ok(()) => {
+                self.status = format!("staged {}", doc.title);
+                if doc.tab == EditorTab::Diff {
+                    doc.reload_diff();
+                }
+            }
+            Err(e) => self.status = format!("stage failed: {e}"),
         }
     }
 }

@@ -1,0 +1,52 @@
+name: release
+
+# Build the prebuilt Windows binary and attach it to the GitHub Release whenever a v* tag is
+# pushed. herdr/install.ps1 downloads the matching asset on `herdr plugin install`.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # A tag push creates no Release object on its own, and the upload step below uploads to an
+  # existing release — so create it first (idempotent). Draft until the binary attaches: an
+  # asset upload after publish would be refused, so publishing is the last step.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          changelog: CHANGELOG.md
+          title: herdr-edit $version
+          draft: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  binary:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Builds herdr-edit for x86_64-pc-windows-msvc, archives it as
+      # herdr-edit-x86_64-pc-windows-msvc.zip with a .sha256 sidecar, and uploads both to the
+      # release for this tag. The toolchain is pinned by rust-toolchain.toml.
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: herdr-edit
+          target: x86_64-pc-windows-msvc
+          archive: $bin-$target
+          checksum: sha256
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish once the binary is attached; a failed build leaves the draft for inspection
+  # instead of shipping a release whose install 404s.
+  publish:
+    needs: binary
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -33,8 +33,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // A fixed-width tree beside the editor, the tree never wider than a third of the pane.
     let tree_width = 32.min(body_area.width / 3).max(16);
-    let split = Layout::horizontal([Constraint::Length(tree_width), Constraint::Min(1)])
-        .split(body_area);
+    let split =
+        Layout::horizontal([Constraint::Length(tree_width), Constraint::Min(1)]).split(body_area);
     render_tree(f, app, split[0]);
     render_editor(f, app, split[1]);
 
@@ -50,7 +50,10 @@ fn render_title(f: &mut Frame, app: &App, area: Rect) {
     let title = Line::from(vec![
         TuiSpan::styled(
             format!(" {marker}{name} "),
-            Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(ACCENT)
+                .add_modifier(Modifier::BOLD),
         ),
         TuiSpan::raw("  "),
         TuiSpan::styled(app.context.summary(), Style::default().fg(MUTED)),
@@ -65,7 +68,11 @@ fn render_tree(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(block, area);
 
     app.tree.viewport_rows = inner.height as usize;
-    let rows = keep_visible(app.tree.selected, &mut app.tree.scroll, inner.height as usize);
+    let rows = keep_visible(
+        app.tree.selected,
+        &mut app.tree.scroll,
+        inner.height as usize,
+    );
 
     let nodes = app.tree.nodes();
     let start = app.tree.scroll.min(nodes.len().saturating_sub(1));
@@ -91,13 +98,21 @@ fn tree_row(node: &Node, selected: bool, focused: bool) -> Line<'static> {
     } else {
         Style::default().fg(Color::Rgb(0xcd, 0xd6, 0xf4))
     };
-    let name = if node.is_dir { format!("{}/", node.name) } else { node.name.clone() };
+    let name = if node.is_dir {
+        format!("{}/", node.name)
+    } else {
+        node.name.clone()
+    };
     let mut line = Line::from(vec![
         TuiSpan::styled(format!("{indent}{marker}"), Style::default().fg(MUTED)),
         TuiSpan::styled(name, name_style),
     ]);
     if selected {
-        let bg = if focused { SELECT_BG } else { Color::Rgb(0x25, 0x26, 0x36) };
+        let bg = if focused {
+            SELECT_BG
+        } else {
+            Color::Rgb(0x25, 0x26, 0x36)
+        };
         line = line.style(Style::default().bg(bg));
     }
     line
@@ -138,7 +153,11 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let total = doc.buffer.line_count();
     let gutter_width = total.to_string().len().max(2);
     // The view follows the cursor: scroll just enough to keep it on screen.
-    keep_visible(doc.buffer.cursor_line, &mut doc.scroll, inner.height as usize);
+    keep_visible(
+        doc.buffer.cursor_line,
+        &mut doc.scroll,
+        inner.height as usize,
+    );
     let start = doc.scroll.min(total.saturating_sub(1));
     let end = (start + inner.height as usize).min(total);
 
@@ -166,9 +185,14 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     // width of the line up to the cursor, past the line-number gutter.
     if focused {
         let cur_line = doc.buffer.cursor_line;
-        let prefix: String =
-            doc.buffer.line_text(cur_line).chars().take(doc.buffer.cursor_col).collect();
-        let x = inner.x + (gutter_width as u16) + 1 + UnicodeWidthStr::width(prefix.as_str()) as u16;
+        let prefix: String = doc
+            .buffer
+            .line_text(cur_line)
+            .chars()
+            .take(doc.buffer.cursor_col)
+            .collect();
+        let x =
+            inner.x + (gutter_width as u16) + 1 + UnicodeWidthStr::width(prefix.as_str()) as u16;
         let y = inner.y + (cur_line.saturating_sub(doc.scroll)) as u16;
         if y < inner.y + inner.height && x < inner.x + inner.width {
             f.set_cursor_position((x, y));
@@ -202,7 +226,10 @@ fn render_diff_body(f: &mut Frame, doc: &mut crate::app::Document, inner: Rect) 
     if let Some(note) = &doc.diff_note {
         let msg = Paragraph::new(vec![
             Line::from(""),
-            Line::from(TuiSpan::styled(format!("  {note}"), Style::default().fg(MUTED))),
+            Line::from(TuiSpan::styled(
+                format!("  {note}"),
+                Style::default().fg(MUTED),
+            )),
         ]);
         f.render_widget(msg, inner);
         return;
@@ -220,7 +247,10 @@ fn render_diff_body(f: &mut Frame, doc: &mut crate::app::Document, inner: Rect) 
             DiffKind::Meta => MUTED,
             DiffKind::Context => Color::Rgb(0xcd, 0xd6, 0xf4),
         };
-        rows.push(Line::from(TuiSpan::styled(line.text.clone(), Style::default().fg(color))));
+        rows.push(Line::from(TuiSpan::styled(
+            line.text.clone(),
+            Style::default().fg(color),
+        )));
     }
     f.render_widget(Paragraph::new(rows), inner);
 }
@@ -239,8 +269,8 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     };
     let hints = match app.focus {
         Focus::Tree => "  ↑/↓ move  →/Enter open  ← collapse  Tab editor  q quit",
-        Focus::Editor if diff_active => "  ↑/↓ scroll  Ctrl+D editor  Esc tree  Ctrl+Q quit",
-        Focus::Editor => "  type to edit  Ctrl+S save  Ctrl+D diff  Esc tree",
+        Focus::Editor if diff_active => "  ↑/↓ scroll  Ctrl+A stage  Ctrl+D editor  Esc tree",
+        Focus::Editor => "  Ctrl+S save  Ctrl+A stage  Ctrl+D diff  Esc tree",
     };
     let footer = Line::from(vec![
         TuiSpan::styled(pos, Style::default().fg(MUTED)),
@@ -254,7 +284,10 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
 /// A bordered panel whose title brightens when focused.
 fn panel_block(title: &str, focused: bool) -> Block<'static> {
     let (border, title_style) = if focused {
-        (Style::default().fg(ACCENT), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
+        (
+            Style::default().fg(ACCENT),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )
     } else {
         (Style::default().fg(MUTED), Style::default().fg(MUTED))
     };

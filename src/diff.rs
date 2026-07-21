@@ -51,7 +51,10 @@ pub fn parse(unified: &str) -> Vec<DiffLine> {
             } else {
                 DiffKind::Context
             };
-            DiffLine { kind, text: line.to_string() }
+            DiffLine {
+                kind,
+                text: line.to_string(),
+            }
         })
         .collect()
 }

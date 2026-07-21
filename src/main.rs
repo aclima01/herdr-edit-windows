@@ -6,6 +6,7 @@
 
 mod app;
 mod buffer;
+mod config;
 mod diff;
 mod git;
 mod herdr;
@@ -24,7 +25,8 @@ use crate::highlight::Highlighter;
 
 fn main() -> Result<()> {
     let context = Context::from_env();
-    let mut app = init(context, Highlighter::new());
+    let config = config::Config::load();
+    let mut app = init(context, Highlighter::with_theme(config.theme));
 
     let mut terminal = ratatui::init();
     let result = run(&mut terminal, &mut app);
@@ -62,6 +64,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
             }
             KeyCode::Char('d') => {
                 app.toggle_diff();
+                return;
+            }
+            KeyCode::Char('a') => {
+                app.stage();
                 return;
             }
             _ => {}

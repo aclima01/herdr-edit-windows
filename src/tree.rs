@@ -71,7 +71,9 @@ impl Tree {
 
     /// Append `dir`'s children as rows, recursing into expanded subdirectories.
     fn walk(&self, dir: &Path, depth: usize, out: &mut Vec<Node>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         let mut items: Vec<(PathBuf, String, bool)> = entries
             .flatten()
             .filter_map(|e| {
@@ -85,11 +87,18 @@ impl Tree {
             .collect();
         // Directories first, then files, both case-insensitive by name.
         items.sort_by(|a, b| {
-            b.2.cmp(&a.2).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+            b.2.cmp(&a.2)
+                .then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
         });
         for (path, name, is_dir) in items {
             let expanded = is_dir && self.expanded.contains(&path);
-            out.push(Node { path: path.clone(), name, depth, is_dir, expanded });
+            out.push(Node {
+                path: path.clone(),
+                name,
+                depth,
+                is_dir,
+                expanded,
+            });
             if expanded {
                 self.walk(&path, depth + 1, out);
             }
@@ -120,7 +129,9 @@ impl Tree {
     /// Collapse the selected directory if expanded, else move the selection to its parent
     /// row, so `←` walks out of a subtree.
     pub fn collapse(&mut self) {
-        let Some(node) = self.selected_node() else { return };
+        let Some(node) = self.selected_node() else {
+            return;
+        };
         if node.is_dir && node.expanded {
             let path = node.path.clone();
             self.expanded.remove(&path);

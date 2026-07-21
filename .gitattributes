@@ -1,0 +1,4 @@
+# Normalize all text to LF in the repository; tools on Windows handle LF fine.
+* text=auto eol=lf
+*.exe binary
+*.zip binary

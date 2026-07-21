@@ -5,6 +5,12 @@ min_herdr_version = "0.7.0"
 platforms = ["windows"]
 description = "A simple text editor in a herdr pane: file tree, syntax-highlighted editor, and an uncommitted-diff tab. Windows-only."
 
+# On `herdr plugin install`, download the prebuilt binary for this release into bin/. `herdr
+# plugin link` skips this step (build from source and copy into bin/ for local dev).
+[[build]]
+command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", 'herdr\install.ps1']
+platforms = ["windows"]
+
 # The edit pane runs the downloaded binary by absolute path under the plugin root: the pane's cwd
 # is the repo under edit (not the plugin root) and the binary isn't on PATH. `%HERDR_PLUGIN_ROOT:\\?\=%`
 # strips the \\?\ extended-length prefix so a path with spaces resolves under cmd. Single-quoted TOML

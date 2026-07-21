@@ -9,6 +9,7 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::Theme;
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
+use two_face::theme::EmbeddedThemeName;
 
 /// One run of same-colored text on a line.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,13 +47,18 @@ impl Default for Highlighter {
 }
 
 impl Highlighter {
-    /// Build with the embedded Catppuccin Mocha theme, a dark theme that reads well on a
-    /// terminal that keeps its own background.
+    /// Build with the default embedded theme (Catppuccin Mocha).
     pub fn new() -> Self {
-        let theme =
-            two_face::theme::extra().get(two_face::theme::EmbeddedThemeName::CatppuccinMocha).clone();
-        let default_fg =
-            theme.settings.foreground.map_or(DEFAULT_FG, |c| (c.r, c.g, c.b));
+        Self::with_theme(EmbeddedThemeName::CatppuccinMocha)
+    }
+
+    /// Build with a specific embedded theme, chosen by plugin config (`config.rs`).
+    pub fn with_theme(name: EmbeddedThemeName) -> Self {
+        let theme = two_face::theme::extra().get(name).clone();
+        let default_fg = theme
+            .settings
+            .foreground
+            .map_or(DEFAULT_FG, |c| (c.r, c.g, c.b));
         Self { theme, default_fg }
     }
 
@@ -65,7 +71,12 @@ impl Highlighter {
         let Some(syntax) = syntax else {
             return content
                 .lines()
-                .map(|l| vec![Span { text: l.to_string(), color: self.default_fg }])
+                .map(|l| {
+                    vec![Span {
+                        text: l.to_string(),
+                        color: self.default_fg,
+                    }]
+                })
                 .collect();
         };
         let mut h = HighlightLines::new(syntax, &self.theme);
@@ -76,11 +87,7 @@ impl Highlighter {
                     .into_iter()
                     .map(|(style, text)| Span {
                         text: text.trim_end_matches('\n').to_string(),
-                        color: (
-                            style.foreground.r,
-                            style.foreground.g,
-                            style.foreground.b,
-                        ),
+                        color: (style.foreground.r, style.foreground.g, style.foreground.b),
                     })
                     .collect(),
                 // A grammar error degrades to plain text rather than blocking the view.
@@ -111,7 +118,11 @@ mod tests {
             "let x = 1;"
         );
         // A keyword color differs from the default text color.
-        assert!(spans.iter().any(|s| s.text == "let" && s.color != super::DEFAULT_FG));
+        assert!(
+            spans
+                .iter()
+                .any(|s| s.text == "let" && s.color != super::DEFAULT_FG)
+        );
     }
 
     #[test]

@@ -1,6 +1,5 @@
-//! Read-only git access for the diff tab. Every call here only reads: it runs `git` as a
-//! subprocess and never stages, commits, or mutates the worktree. (Milestone 5 adds the one
-//! write, `git add`.)
+//! git access for the diff tab and staging. Reads dominate: repo discovery and diffs never
+//! touch the index. The one write is [`stage`] (`git add`), invoked only on the user's key.
 //!
 //! The binary runs inside the herdr pane's own console, so a `git` subprocess inherits it
 //! and never flashes a separate window on Windows.
@@ -20,7 +19,10 @@ fn git(repo: &Path, args: &[&str]) -> Result<String> {
         .output()
         .with_context(|| format!("running git {args:?}"))?;
     if !out.status.success() {
-        bail!("git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+        bail!(
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -45,4 +47,11 @@ pub fn toplevel(dir: &Path) -> Option<PathBuf> {
 pub fn diff_uncommitted(repo: &Path, file: &Path) -> Result<String> {
     let path = file.to_string_lossy();
     git(repo, &["diff", "HEAD", "--", &path])
+}
+
+/// Stage `file` into the index (`git add`). The sole write in this module.
+pub fn stage(repo: &Path, file: &Path) -> Result<()> {
+    let path = file.to_string_lossy();
+    git(repo, &["add", "--", &path])?;
+    Ok(())
 }
