@@ -1,10 +1,11 @@
 //! herdr-edit — a simple text editor that runs in a herdr pane. Windows-only.
 //!
-//! Milestone 2: a file tree beside a read-only, syntax-highlighted editor. The tree opens
-//! a file on select. The binary is long-lived: it paints a TUI in the pane herdr opens for
-//! it and exits on `q`.
+//! Milestone 3: a file tree beside an editable `ropey` buffer. The tree opens a file on
+//! select; the editor is modeless — printable keys insert, `Ctrl+S` saves, `Esc` returns
+//! to the tree. The binary is long-lived and exits on `Ctrl+Q`.
 
 mod app;
+mod buffer;
 mod herdr;
 mod highlight;
 mod tree;
@@ -13,7 +14,7 @@ mod ui;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::app::{App, Focus, init};
 use crate::herdr::Context;
@@ -29,64 +30,81 @@ fn main() -> Result<()> {
     result
 }
 
-/// The frame loop: draw, wait for a key, mutate, repeat. Blocks on input with a short
-/// poll timeout so the loop stays responsive without busy-spinning.
+/// The frame loop: refresh the highlight, draw, wait for a key, mutate, repeat. Blocks on
+/// input with a short poll timeout so the loop stays responsive without busy-spinning.
 fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
     while !app.should_quit {
+        app.refresh_highlight();
         terminal.draw(|f| ui::render(f, app))?;
         if event::poll(Duration::from_millis(250))?
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
         {
-            handle_key(app, key.code);
+            handle_key(app, key);
         }
     }
     Ok(())
 }
 
-/// Route a keypress. `q`/`Tab` are global; the rest go to the focused panel.
-fn handle_key(app: &mut App, code: KeyCode) {
-    match code {
-        KeyCode::Char('q') => {
-            app.should_quit = true;
-            return;
+/// Route a keypress. `Ctrl+Q`/`Ctrl+S`/`Tab` are global; the rest go to the focused panel.
+fn handle_key(app: &mut App, key: KeyEvent) {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Char('c') => {
+                app.should_quit = true;
+                return;
+            }
+            KeyCode::Char('s') => {
+                app.save();
+                return;
+            }
+            _ => {}
         }
-        KeyCode::Tab => {
-            app.toggle_focus();
-            return;
-        }
-        _ => {}
+    }
+    if key.code == KeyCode::Tab {
+        app.toggle_focus();
+        return;
     }
     match app.focus {
-        Focus::Tree => handle_tree_key(app, code),
-        Focus::Editor => handle_editor_key(app, code),
+        Focus::Tree => handle_tree_key(app, key.code),
+        Focus::Editor => handle_editor_key(app, key.code),
     }
 }
 
-/// Tree navigation: move the cursor, expand/collapse, or open a file.
+/// Tree navigation: move the cursor, expand/collapse, open a file, or quit.
 fn handle_tree_key(app: &mut App, code: KeyCode) {
     match code {
-        KeyCode::Down | KeyCode::Char('j') => app.tree.move_down(),
-        KeyCode::Up | KeyCode::Char('k') => app.tree.move_up(),
-        KeyCode::Right | KeyCode::Char('l') => app.tree.expand(),
-        KeyCode::Left | KeyCode::Char('h') => app.tree.collapse(),
+        KeyCode::Char('q') => app.should_quit = true,
+        KeyCode::Down => app.tree.move_down(),
+        KeyCode::Up => app.tree.move_up(),
+        KeyCode::Right => app.tree.expand(),
+        KeyCode::Left => app.tree.collapse(),
         KeyCode::Enter => app.activate_selection(),
         _ => {}
     }
 }
 
-/// Editor scrolling. Paging moves by one viewport height; `Esc` returns focus to the tree.
+/// Modeless editing: move the cursor, insert, delete, or leave to the tree.
 fn handle_editor_key(app: &mut App, code: KeyCode) {
+    if code == KeyCode::Esc {
+        app.focus = Focus::Tree;
+        return;
+    }
     let Some(doc) = app.doc.as_mut() else { return };
     let page = doc.viewport_rows.saturating_sub(1).max(1);
     match code {
-        KeyCode::Down | KeyCode::Char('j') => doc.scroll_down(1),
-        KeyCode::Up | KeyCode::Char('k') => doc.scroll_up(1),
-        KeyCode::PageDown | KeyCode::Char(' ') => doc.scroll_down(page),
-        KeyCode::PageUp => doc.scroll_up(page),
-        KeyCode::Char('g') | KeyCode::Home => doc.scroll_to_start(),
-        KeyCode::Char('G') | KeyCode::End => doc.scroll_to_end(),
-        KeyCode::Esc => app.focus = Focus::Tree,
+        KeyCode::Left => doc.buffer.move_left(),
+        KeyCode::Right => doc.buffer.move_right(),
+        KeyCode::Up => doc.buffer.move_up(1),
+        KeyCode::Down => doc.buffer.move_down(1),
+        KeyCode::PageUp => doc.buffer.move_up(page),
+        KeyCode::PageDown => doc.buffer.move_down(page),
+        KeyCode::Home => doc.buffer.move_home(),
+        KeyCode::End => doc.buffer.move_end(),
+        KeyCode::Enter => doc.insert_newline(),
+        KeyCode::Backspace => doc.backspace(),
+        KeyCode::Delete => doc.delete_forward(),
+        KeyCode::Char(c) => doc.insert_char(c),
         _ => {}
     }
 }

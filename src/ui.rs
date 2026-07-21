@@ -6,6 +6,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span as TuiSpan};
 use ratatui::widgets::{Block, Borders, Paragraph};
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, Focus};
 use crate::tree::Node;
@@ -40,10 +41,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 }
 
 fn render_title(f: &mut Frame, app: &App, area: Rect) {
-    let name = app.doc.as_ref().map_or("herdr-edit", |d| d.title.as_str());
+    let (name, modified) = match &app.doc {
+        Some(d) => (d.title.as_str(), d.buffer.modified),
+        None => ("herdr-edit", false),
+    };
+    let marker = if modified { "● " } else { "" };
     let title = Line::from(vec![
         TuiSpan::styled(
-            format!(" {name} "),
+            format!(" {marker}{name} "),
             Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD),
         ),
         TuiSpan::raw("  "),
@@ -120,38 +125,60 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     doc.viewport_rows = inner.height as usize;
-    let total = doc.lines.len();
+    let total = doc.buffer.line_count();
     let gutter_width = total.to_string().len().max(2);
+    // The view follows the cursor: scroll just enough to keep it on screen.
+    keep_visible(doc.buffer.cursor_line, &mut doc.scroll, inner.height as usize);
     let start = doc.scroll.min(total.saturating_sub(1));
     let end = (start + inner.height as usize).min(total);
 
+    let highlight = doc.highlight();
     let mut rows: Vec<Line> = Vec::with_capacity(end.saturating_sub(start));
-    for (i, spans) in doc.lines[start..end].iter().enumerate() {
-        let lineno = start + i + 1;
-        let mut cells =
-            vec![TuiSpan::styled(format!("{lineno:>gutter_width$} "), Style::default().fg(MUTED))];
-        for s in spans {
-            cells.push(TuiSpan::styled(
-                s.text.clone(),
-                Style::default().fg(Color::Rgb(s.color.0, s.color.1, s.color.2)),
-            ));
+    for lineno in start..end {
+        let mut cells = vec![TuiSpan::styled(
+            format!("{:>gutter_width$} ", lineno + 1),
+            Style::default().fg(MUTED),
+        )];
+        // A line past the cached highlight (e.g. a trailing empty line) renders blank.
+        if let Some(spans) = highlight.get(lineno) {
+            for s in spans {
+                cells.push(TuiSpan::styled(
+                    s.text.clone(),
+                    Style::default().fg(Color::Rgb(s.color.0, s.color.1, s.color.2)),
+                ));
+            }
         }
         rows.push(Line::from(cells));
     }
     f.render_widget(Paragraph::new(rows), inner);
+
+    // Place the real terminal cursor when the editor has focus. Its column is the display
+    // width of the line up to the cursor, past the line-number gutter.
+    if focused {
+        let cur_line = doc.buffer.cursor_line;
+        let prefix: String =
+            doc.buffer.line_text(cur_line).chars().take(doc.buffer.cursor_col).collect();
+        let x = inner.x + (gutter_width as u16) + 1 + UnicodeWidthStr::width(prefix.as_str()) as u16;
+        let y = inner.y + (cur_line.saturating_sub(doc.scroll)) as u16;
+        if y < inner.y + inner.height && x < inner.x + inner.width {
+            f.set_cursor_position((x, y));
+        }
+    }
 }
 
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let pos = match &app.doc {
-        Some(doc) => {
-            let end = (doc.scroll + doc.viewport_rows).min(doc.lines.len());
-            format!(" {}/{} ", end.min(doc.lines.len()), doc.lines.len())
-        }
+        Some(doc) => format!(
+            " {}:{} / {} ",
+            doc.buffer.cursor_line + 1,
+            doc.buffer.cursor_col + 1,
+            doc.buffer.line_count()
+        ),
         None => format!(" {} files ", app.tree.nodes().len()),
     };
     let hints = match app.focus {
         Focus::Tree => "  ↑/↓ move  →/Enter open  ← collapse  Tab editor  q quit",
-        Focus::Editor => "  ↑/↓ PgUp/PgDn  g/G top/bottom  Tab tree  q quit",
+        Focus::Editor => "  type to edit  Ctrl+S save  Esc tree  Ctrl+Q quit",
     };
     let footer = Line::from(vec![
         TuiSpan::styled(pos, Style::default().fg(MUTED)),

@@ -1,11 +1,12 @@
-//! The editor's state. Milestone 2: a file tree beside a read-only editor. The tree
-//! opens a file on select; the editor shows it highlighted and scrolls it. Editing and
-//! the diff tab come in later milestones.
+//! The editor's state. Milestone 3: the editor is an editable `ropey` buffer. The tree
+//! opens a file into it; typing inserts, `Ctrl+S` saves, and the syntax highlight is
+//! recomputed from the buffer after each edit. The diff tab comes in Milestone 4.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
+use crate::buffer::Buffer;
 use crate::herdr::Context;
 use crate::highlight::{Highlighter, Span};
 use crate::tree::Tree;
@@ -17,38 +18,77 @@ pub enum Focus {
     Editor,
 }
 
-/// One opened, read-only document: its display name, highlighted lines, and scroll offset.
+/// One opened document: the file path, the editable buffer, the scroll offset, and a cached
+/// syntax highlight rebuilt lazily after edits.
 #[derive(Debug)]
 pub struct Document {
+    pub path: Option<PathBuf>,
     pub title: String,
-    pub lines: Vec<Vec<Span>>,
+    ext: Option<String>,
+    pub buffer: Buffer,
     pub scroll: usize,
     pub viewport_rows: usize,
+    highlight: Vec<Vec<Span>>,
+    highlight_dirty: bool,
 }
 
 impl Document {
-    fn from_lines(title: String, lines: Vec<Vec<Span>>) -> Self {
-        Self { title, lines, scroll: 0, viewport_rows: 0 }
+    fn new(path: Option<PathBuf>, title: String, text: &str) -> Self {
+        let ext = path.as_ref().and_then(|p| p.extension()).and_then(|e| e.to_str()).map(str::to_owned);
+        Self {
+            path,
+            title,
+            ext,
+            buffer: Buffer::from_str(text),
+            scroll: 0,
+            viewport_rows: 0,
+            highlight: Vec::new(),
+            highlight_dirty: true,
+        }
     }
 
-    fn max_scroll(&self) -> usize {
-        self.lines.len().saturating_sub(1)
+    /// The cached per-line highlight spans. Valid only after [`ensure_highlight`].
+    pub fn highlight(&self) -> &[Vec<Span>] {
+        &self.highlight
     }
 
-    pub fn scroll_down(&mut self, n: usize) {
-        self.scroll = (self.scroll + n).min(self.max_scroll());
+    /// Rebuild the highlight from the buffer if an edit invalidated it. Cheap when clean.
+    pub fn ensure_highlight(&mut self, highlighter: &Highlighter) {
+        if self.highlight_dirty {
+            self.highlight = highlighter.highlight(&self.buffer.text(), self.ext.as_deref());
+            self.highlight_dirty = false;
+        }
     }
 
-    pub fn scroll_up(&mut self, n: usize) {
-        self.scroll = self.scroll.saturating_sub(n);
+    // --- editing (invalidates the highlight) -------------------------------
+
+    pub fn insert_char(&mut self, c: char) {
+        self.buffer.insert_char(c);
+        self.highlight_dirty = true;
     }
 
-    pub fn scroll_to_start(&mut self) {
-        self.scroll = 0;
+    pub fn insert_newline(&mut self) {
+        self.buffer.insert_newline();
+        self.highlight_dirty = true;
     }
 
-    pub fn scroll_to_end(&mut self) {
-        self.scroll = self.max_scroll();
+    pub fn backspace(&mut self) {
+        self.buffer.backspace();
+        self.highlight_dirty = true;
+    }
+
+    pub fn delete_forward(&mut self) {
+        self.buffer.delete_forward();
+        self.highlight_dirty = true;
+    }
+
+    /// Write the buffer to its path. Returns the number of bytes written.
+    pub fn save(&mut self) -> Result<usize> {
+        let path = self.path.as_ref().context("no file path to save to")?;
+        let text = self.buffer.text();
+        std::fs::write(path, &text).with_context(|| format!("writing {}", path.display()))?;
+        self.buffer.clear_modified();
+        Ok(text.len())
     }
 }
 
@@ -81,6 +121,14 @@ impl App {
         }
     }
 
+    /// Rebuild the open document's highlight if an edit dirtied it. Called once per frame
+    /// before drawing, so rendering borrows an up-to-date cache immutably.
+    pub fn refresh_highlight(&mut self) {
+        if let Some(doc) = self.doc.as_mut() {
+            doc.ensure_highlight(&self.highlighter);
+        }
+    }
+
     /// Toggle focus between the tree and the editor.
     pub fn toggle_focus(&mut self) {
         self.focus = match self.focus {
@@ -97,13 +145,16 @@ impl App {
         }
     }
 
-    /// Open `path` read-only, highlight it, and focus the editor. A read error stays on the
-    /// tree with the reason in the status line.
+    /// Open `path` into the editor and focus it. Line endings are normalized to `\n` (the
+    /// buffer works in `\n`; a save writes `\n`). A read error stays on the tree with the
+    /// reason in the status line.
     pub fn open_path(&mut self, path: &Path) {
-        match read_document(path, &self.highlighter) {
-            Ok(doc) => {
+        match std::fs::read_to_string(path) {
+            Ok(raw) => {
+                let text = raw.replace("\r\n", "\n");
+                let title = path.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
                 self.status = format!("opened {}", path.display());
-                self.doc = Some(doc);
+                self.doc = Some(Document::new(Some(path.to_path_buf()), title, &text));
                 self.focus = Focus::Editor;
             }
             Err(e) => {
@@ -111,16 +162,18 @@ impl App {
             }
         }
     }
-}
 
-/// Read `path` into a highlighted [`Document`].
-fn read_document(path: &Path, highlighter: &Highlighter) -> Result<Document> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let ext = path.extension().and_then(|e| e.to_str());
-    let lines = highlighter.highlight(&content, ext);
-    let title = path.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
-    Ok(Document::from_lines(title, lines))
+    /// Save the open document, reporting the outcome in the status line.
+    pub fn save(&mut self) {
+        let Some(doc) = self.doc.as_mut() else {
+            self.status = "nothing to save".to_string();
+            return;
+        };
+        match doc.save() {
+            Ok(bytes) => self.status = format!("saved {} ({bytes} bytes)", doc.title),
+            Err(e) => self.status = format!("save failed: {e}"),
+        }
+    }
 }
 
 /// Build the editor and open an initial file: the first CLI argument if given, else nothing
