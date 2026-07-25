@@ -1,6 +1,6 @@
 id = "aclima.edit"
 name = "herdr-edit"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.7.0"
 platforms = ["windows"]
 description = "A simple text editor in a herdr pane: file tree, syntax-highlighted editor, and an uncommitted-diff tab. Windows-only."

@@ -39,21 +39,21 @@ try {
         }
     }
 
-    Write-Host "$Name: downloading $archive ($tag)"
+    Write-Host "${Name}: downloading $archive ($tag)"
     Get-WithRetry "$base/$archive"  (Join-Path $tmp $archive)
     Get-WithRetry "$base/$checksum" (Join-Path $tmp $checksum)
 
-    Write-Host "$Name: verifying checksum"
+    Write-Host "${Name}: verifying checksum"
     $expected = (((Get-Content (Join-Path $tmp $checksum) -Raw).Trim()) -split '\s+')[0].ToLower()
     $actual   = (Get-FileHash (Join-Path $tmp $archive) -Algorithm SHA256).Hash.ToLower()
     if ($expected -ne $actual) {
-        throw "$Name: checksum mismatch (expected $expected, got $actual)"
+        throw "${Name}: checksum mismatch (expected $expected, got $actual)"
     }
 
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath $tmp -Force
     Copy-Item (Join-Path $tmp "$Name.exe") (Join-Path $BinDir "$Name.exe") -Force
-    Write-Host "$Name: installed $(Join-Path $BinDir "$Name.exe")"
+    Write-Host "${Name}: installed $(Join-Path $BinDir "$Name.exe")"
 } finally {
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
