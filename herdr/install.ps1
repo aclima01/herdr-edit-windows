@@ -45,14 +45,21 @@ try {
 
     Write-Host "${Name}: verifying checksum"
     $expected = (((Get-Content (Join-Path $tmp $checksum) -Raw).Trim()) -split '\s+')[0].ToLower()
-    $actual   = (Get-FileHash (Join-Path $tmp $archive) -Algorithm SHA256).Hash.ToLower()
+    # Get-FileHash needs PowerShell 4+, which isn't guaranteed (Windows 8 ships PowerShell 3).
+    # Compute SHA256 via .NET so the build step runs on PowerShell 3 as well.
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $bytes  = [System.IO.File]::ReadAllBytes((Join-Path $tmp $archive))
+    $actual = ([System.BitConverter]::ToString($sha256.ComputeHash($bytes)) -replace '-', '').ToLower()
     if ($expected -ne $actual) {
         throw "${Name}: checksum mismatch (expected $expected, got $actual)"
     }
 
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-    Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath $tmp -Force
-    Copy-Item (Join-Path $tmp "$Name.exe") (Join-Path $BinDir "$Name.exe") -Force
+    # Expand-Archive needs PowerShell 5+; use .NET's ZipFile so extraction works on PowerShell 3.
+    $extract = Join-Path $tmp 'unzip'
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $tmp $archive), $extract)
+    Copy-Item (Join-Path $extract "$Name.exe") (Join-Path $BinDir "$Name.exe") -Force
     Write-Host "${Name}: installed $(Join-Path $BinDir "$Name.exe")"
 } finally {
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
