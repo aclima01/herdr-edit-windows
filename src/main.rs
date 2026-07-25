@@ -24,9 +24,20 @@ use crate::herdr::Context;
 use crate::highlight::Highlighter;
 
 fn main() -> Result<()> {
+    // A diagnostic for `herdr` users: print how the theme config resolved and exit, without
+    // starting the TUI. Run it as `herdr-edit --print-config`.
+    if std::env::args().nth(1).as_deref() == Some("--print-config") {
+        let config = config::Config::load();
+        println!("config dir: {:?}", config::config_dir_debug());
+        println!("resolved:   {}", config.note);
+        return Ok(());
+    }
     let context = Context::from_env();
     let config = config::Config::load();
     let mut app = init(context, Highlighter::with_theme(config.theme));
+    // Surface how the theme resolved (loaded / unknown name / no config) so a silent
+    // fallback is visible in the status line at startup.
+    app.status = config.note;
 
     let mut terminal = ratatui::init();
     let result = run(&mut terminal, &mut app);

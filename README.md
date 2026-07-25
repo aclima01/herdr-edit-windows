@@ -52,6 +52,14 @@ theme = "nord"
 
 Recognized themes: `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox-dark`, `gruvbox-light`, `solarized-dark`, `solarized-light`, `one-half-dark`, `one-half-light`, `two-dark`, `github`, `monokai`, `zenburn`. An unknown name falls back to the default.
 
+The theme is read when the pane starts, so **close and reopen the pane** after editing `config.toml`. The status line reports what it resolved (e.g. `theme: dracula`). If the theme is not taking, run the diagnostic:
+
+```
+herdr-edit --print-config
+```
+
+It prints the config directory it read and the outcome, so you can confirm the file is in the right place and the name is recognized.
+
 ## Build from source
 
 Requires the Rust toolchain (`x86_64-pc-windows-msvc`).
