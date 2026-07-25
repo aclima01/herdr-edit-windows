@@ -10,13 +10,22 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, EditorTab, Focus};
 use crate::diff::DiffKind;
+use crate::highlight::Palette;
 use crate::tree::Node;
 
-const ACCENT: Color = Color::Rgb(0x89, 0xb4, 0xfa);
-const MUTED: Color = Color::Rgb(0x6c, 0x70, 0x86);
-const DIR_FG: Color = Color::Rgb(0x89, 0xb4, 0xfa);
-const STATUS_FG: Color = Color::Rgb(0xf9, 0xe2, 0xaf);
-const SELECT_BG: Color = Color::Rgb(0x31, 0x32, 0x44);
+/// A `ratatui` color from an RGB triple.
+fn rgb((r, g, b): (u8, u8, u8)) -> Color {
+    Color::Rgb(r, g, b)
+}
+
+/// A dimmed background tint of `c` (~30%), for the selected-row highlight.
+fn tint((r, g, b): (u8, u8, u8)) -> Color {
+    Color::Rgb(
+        (r as u16 * 3 / 10) as u8,
+        (g as u16 * 3 / 10) as u8,
+        (b as u16 * 3 / 10) as u8,
+    )
+}
 
 /// Draw the whole frame from `app`, updating the tree and editor viewport heights so paging
 /// keys move by a real screenful.
@@ -52,18 +61,22 @@ fn render_title(f: &mut Frame, app: &App, area: Rect) {
             format!(" {marker}{name} "),
             Style::default()
                 .fg(Color::Black)
-                .bg(ACCENT)
+                .bg(rgb(app.palette.accent))
                 .add_modifier(Modifier::BOLD),
         ),
         TuiSpan::raw("  "),
-        TuiSpan::styled(app.context.summary(), Style::default().fg(MUTED)),
+        TuiSpan::styled(
+            app.context.summary(),
+            Style::default().fg(rgb(app.palette.muted)),
+        ),
     ]);
     f.render_widget(Paragraph::new(title), area);
 }
 
 fn render_tree(f: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == Focus::Tree;
-    let block = panel_block("Files", focused);
+    let pal = app.palette;
+    let block = panel_block("Files", focused, &pal);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -80,13 +93,13 @@ fn render_tree(f: &mut Frame, app: &mut App, area: Rect) {
     let mut lines: Vec<Line> = Vec::with_capacity(end.saturating_sub(start));
     for (i, node) in nodes[start..end].iter().enumerate() {
         let idx = start + i;
-        lines.push(tree_row(node, idx == app.tree.selected, focused));
+        lines.push(tree_row(node, idx == app.tree.selected, focused, &pal));
     }
     f.render_widget(Paragraph::new(lines), inner);
 }
 
 /// One tree row: indent, an expansion caret for a directory, and the name colored by kind.
-fn tree_row(node: &Node, selected: bool, focused: bool) -> Line<'static> {
+fn tree_row(node: &Node, selected: bool, focused: bool, pal: &Palette) -> Line<'static> {
     let indent = "  ".repeat(node.depth);
     let marker = if node.is_dir {
         if node.expanded { "▾ " } else { "▸ " }
@@ -94,9 +107,11 @@ fn tree_row(node: &Node, selected: bool, focused: bool) -> Line<'static> {
         "  "
     };
     let name_style = if node.is_dir {
-        Style::default().fg(DIR_FG).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(rgb(pal.accent))
+            .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::Rgb(0xcd, 0xd6, 0xf4))
+        Style::default().fg(rgb(pal.text))
     };
     let name = if node.is_dir {
         format!("{}/", node.name)
@@ -104,14 +119,18 @@ fn tree_row(node: &Node, selected: bool, focused: bool) -> Line<'static> {
         node.name.clone()
     };
     let mut line = Line::from(vec![
-        TuiSpan::styled(format!("{indent}{marker}"), Style::default().fg(MUTED)),
+        TuiSpan::styled(
+            format!("{indent}{marker}"),
+            Style::default().fg(rgb(pal.muted)),
+        ),
         TuiSpan::styled(name, name_style),
     ]);
     if selected {
+        // The focused pane's selection uses the theme's selection color; unfocused dims it.
         let bg = if focused {
-            SELECT_BG
+            rgb(pal.selection)
         } else {
-            Color::Rgb(0x25, 0x26, 0x36)
+            tint(pal.selection)
         };
         line = line.style(Style::default().bg(bg));
     }
@@ -120,11 +139,16 @@ fn tree_row(node: &Node, selected: bool, focused: bool) -> Line<'static> {
 
 fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == Focus::Editor;
+    let pal = app.palette;
     let active_tab = app.doc.as_ref().map_or(EditorTab::Editor, |d| d.tab);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(if focused { ACCENT } else { MUTED }))
-        .title(tab_strip(active_tab, focused));
+        .border_style(Style::default().fg(if focused {
+            rgb(pal.accent)
+        } else {
+            rgb(pal.muted)
+        }))
+        .title(tab_strip(active_tab, focused, &pal));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -133,11 +157,11 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
             Line::from(""),
             Line::from(TuiSpan::styled(
                 "  Select a file in the tree and press Enter.",
-                Style::default().fg(MUTED),
+                Style::default().fg(rgb(pal.muted)),
             )),
             Line::from(TuiSpan::styled(
                 "  Tab switches focus; Ctrl+D shows the uncommitted diff.",
-                Style::default().fg(MUTED),
+                Style::default().fg(rgb(pal.muted)),
             )),
         ]);
         f.render_widget(hint, inner);
@@ -145,7 +169,7 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     if doc.tab == EditorTab::Diff {
-        render_diff_body(f, doc, inner);
+        render_diff_body(f, doc, inner, &pal);
         return;
     }
 
@@ -166,7 +190,7 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
     for lineno in start..end {
         let mut cells = vec![TuiSpan::styled(
             format!("{:>gutter_width$} ", lineno + 1),
-            Style::default().fg(MUTED),
+            Style::default().fg(rgb(pal.muted)),
         )];
         // A line past the cached highlight (e.g. a trailing empty line) renders blank.
         if let Some(spans) = highlight.get(lineno) {
@@ -202,33 +226,36 @@ fn render_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
 /// The editor panel's title: an " Editor │ Diff " strip, the active tab bright, the rest
 /// dimmed. When the panel is unfocused every chip dims.
-fn tab_strip(active: EditorTab, focused: bool) -> Line<'static> {
+fn tab_strip(active: EditorTab, focused: bool, pal: &Palette) -> Line<'static> {
     let chip = |label: &str, on: bool| {
         let style = if on && focused {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(rgb(pal.accent))
+                .add_modifier(Modifier::BOLD)
         } else if on {
-            Style::default().fg(Color::Rgb(0xcd, 0xd6, 0xf4))
+            Style::default().fg(rgb(pal.text))
         } else {
-            Style::default().fg(MUTED)
+            Style::default().fg(rgb(pal.muted))
         };
         TuiSpan::styled(format!(" {label} "), style)
     };
     Line::from(vec![
         chip("Editor", active == EditorTab::Editor),
-        TuiSpan::styled("│", Style::default().fg(MUTED)),
+        TuiSpan::styled("│", Style::default().fg(rgb(pal.muted))),
         chip("Diff", active == EditorTab::Diff),
     ])
 }
 
 /// Render the uncommitted diff: each line colored by its role, or a centered note when there
-/// is nothing to show.
-fn render_diff_body(f: &mut Frame, doc: &mut crate::app::Document, inner: Rect) {
+/// is nothing to show. Add/remove/hunk keep conventional green/red/cyan; context and meta
+/// follow the theme.
+fn render_diff_body(f: &mut Frame, doc: &mut crate::app::Document, inner: Rect, pal: &Palette) {
     if let Some(note) = &doc.diff_note {
         let msg = Paragraph::new(vec![
             Line::from(""),
             Line::from(TuiSpan::styled(
                 format!("  {note}"),
-                Style::default().fg(MUTED),
+                Style::default().fg(rgb(pal.muted)),
             )),
         ]);
         f.render_widget(msg, inner);
@@ -243,9 +270,9 @@ fn render_diff_body(f: &mut Frame, doc: &mut crate::app::Document, inner: Rect) 
         let color = match line.kind {
             DiffKind::Add => Color::Rgb(0xa6, 0xe3, 0xa1),
             DiffKind::Remove => Color::Rgb(0xf3, 0x8b, 0xa8),
-            DiffKind::Hunk => Color::Rgb(0x89, 0xdc, 0xeb),
-            DiffKind::Meta => MUTED,
-            DiffKind::Context => Color::Rgb(0xcd, 0xd6, 0xf4),
+            DiffKind::Hunk => rgb(pal.accent),
+            DiffKind::Meta => rgb(pal.muted),
+            DiffKind::Context => rgb(pal.text),
         };
         rows.push(Line::from(TuiSpan::styled(
             line.text.clone(),
@@ -273,23 +300,31 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         Focus::Editor => "  Ctrl+S save  Ctrl+A stage  Ctrl+D diff  Esc tree",
     };
     let footer = Line::from(vec![
-        TuiSpan::styled(pos, Style::default().fg(MUTED)),
-        TuiSpan::styled(hints, Style::default().fg(MUTED)),
+        TuiSpan::styled(pos, Style::default().fg(rgb(app.palette.muted))),
+        TuiSpan::styled(hints, Style::default().fg(rgb(app.palette.muted))),
         TuiSpan::raw("   "),
-        TuiSpan::styled(app.status.clone(), Style::default().fg(STATUS_FG)),
+        TuiSpan::styled(
+            app.status.clone(),
+            Style::default().fg(rgb(app.palette.status)),
+        ),
     ]);
     f.render_widget(Paragraph::new(footer), area);
 }
 
 /// A bordered panel whose title brightens when focused.
-fn panel_block(title: &str, focused: bool) -> Block<'static> {
+fn panel_block(title: &str, focused: bool, pal: &Palette) -> Block<'static> {
     let (border, title_style) = if focused {
         (
-            Style::default().fg(ACCENT),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default().fg(rgb(pal.accent)),
+            Style::default()
+                .fg(rgb(pal.accent))
+                .add_modifier(Modifier::BOLD),
         )
     } else {
-        (Style::default().fg(MUTED), Style::default().fg(MUTED))
+        (
+            Style::default().fg(rgb(pal.muted)),
+            Style::default().fg(rgb(pal.muted)),
+        )
     };
     Block::default()
         .borders(Borders::ALL)

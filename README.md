@@ -52,7 +52,7 @@ theme = "nord"
 
 Recognized themes: `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `nord`, `dracula`, `gruvbox-dark`, `gruvbox-light`, `solarized-dark`, `solarized-light`, `one-half-dark`, `one-half-light`, `two-dark`, `github`, `monokai`, `zenburn`. An unknown name falls back to the default.
 
-The theme is read when the pane starts, so **close and reopen the pane** after editing `config.toml`. The status line reports what it resolved (e.g. `theme: dracula`). If the theme is not taking, run the diagnostic:
+The theme colors the whole pane — syntax, borders, tree, title, gutter, and status all follow it. It is read when the pane starts, so **close and reopen the pane** after editing `config.toml`. The status line reports what it resolved (e.g. `theme: dracula`). If the theme is not taking, run the diagnostic:
 
 ```
 herdr-edit --print-config

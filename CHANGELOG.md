@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-07-25
+
+### Changed
+
+- The `theme` setting now colors the whole pane, not just the syntax. Borders, the file
+  tree, the title, the line-number gutter, the selection, and the status line are derived
+  from the active theme's palette (its keyword, comment, string, and selection colors).
+  Previously only an open file's code tokens changed color.
+
 ## [0.1.3] - 2026-07-25
 
 ### Fixed

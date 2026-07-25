@@ -21,6 +21,22 @@ pub struct Span {
 /// Fallback text color when a token carries none (Catppuccin Mocha text).
 const DEFAULT_FG: (u8, u8, u8) = (0xcd, 0xd6, 0xf4);
 
+/// UI chrome colors derived from the active theme, so the whole pane (borders, tree,
+/// title, gutter, selection, status) follows the configured theme, not just the syntax.
+#[derive(Clone, Copy, Debug)]
+pub struct Palette {
+    /// Default text: file names and body text.
+    pub text: (u8, u8, u8),
+    /// Focused borders and titles, directory names — the theme's keyword color.
+    pub accent: (u8, u8, u8),
+    /// Gutter, key hints, unfocused chrome — the theme's comment color.
+    pub muted: (u8, u8, u8),
+    /// Selected tree row background — the theme's selection color.
+    pub selection: (u8, u8, u8),
+    /// Transient status messages — the theme's string color.
+    pub status: (u8, u8, u8),
+}
+
 /// The broad two-face/bat syntax set, built once per process (deserializing it is
 /// expensive) and shared across the process.
 fn syntaxes() -> &'static SyntaxSet {
@@ -60,6 +76,41 @@ impl Highlighter {
             .foreground
             .map_or(DEFAULT_FG, |c| (c.r, c.g, c.b));
         Self { theme, default_fg }
+    }
+
+    /// Derive UI chrome colors from the theme. Accent, muted, and status come from the
+    /// theme's own keyword, comment, and string colors (sampled by highlighting a tiny Rust
+    /// snippet), so the chrome always matches the syntax. Selection comes from the theme
+    /// settings, dimmed toward the default when absent.
+    pub fn palette(&self) -> Palette {
+        // Distinct tokens: `fn` (keyword), `"s"` (string), `// c` (comment).
+        let sample = "fn a() { let x = \"s\"; }\n// c\n";
+        let spans: Vec<Span> = self
+            .highlight(sample, Some("rs"))
+            .into_iter()
+            .flatten()
+            .collect();
+        let color_of =
+            |pred: &dyn Fn(&str) -> bool| spans.iter().find(|s| pred(&s.text)).map(|s| s.color);
+
+        let accent = color_of(&|t| t.trim() == "fn").unwrap_or(self.default_fg);
+        let status = color_of(&|t| t.contains('s') && t.contains('"'))
+            .or_else(|| color_of(&|t| t.trim() == "s"))
+            .unwrap_or(self.default_fg);
+        let muted = color_of(&|t| t.contains("//")).unwrap_or_else(|| dim(self.default_fg));
+        let selection = self
+            .theme
+            .settings
+            .selection
+            .map_or_else(|| dim(accent), |c| (c.r, c.g, c.b));
+
+        Palette {
+            text: self.default_fg,
+            accent,
+            muted,
+            selection,
+            status,
+        }
     }
 
     /// Highlight `content` line by line. Each inner `Vec` is one line's spans. With no
@@ -102,6 +153,15 @@ impl Highlighter {
     }
 }
 
+/// A dimmed variant of a color (~40% toward black), for a muted fallback.
+fn dim(c: (u8, u8, u8)) -> (u8, u8, u8) {
+    (
+        (c.0 as u16 * 2 / 5) as u8,
+        (c.1 as u16 * 2 / 5) as u8,
+        (c.2 as u16 * 2 / 5) as u8,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::Highlighter;
@@ -123,6 +183,17 @@ mod tests {
                 .iter()
                 .any(|s| s.text == "let" && s.color != super::DEFAULT_FG)
         );
+    }
+
+    #[test]
+    fn palette_follows_the_theme() {
+        use two_face::theme::EmbeddedThemeName as T;
+        let dracula = Highlighter::with_theme(T::Dracula).palette();
+        let zenburn = Highlighter::with_theme(T::Zenburn).palette();
+        // Two themes yield different chrome, and the accent is a real (non-default) color.
+        assert_ne!(dracula.accent, zenburn.accent);
+        assert_ne!(dracula.text, zenburn.text);
+        assert_ne!(dracula.accent, super::DEFAULT_FG);
     }
 
     #[test]

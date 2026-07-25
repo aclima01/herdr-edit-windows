@@ -10,7 +10,7 @@ use crate::buffer::Buffer;
 use crate::diff::{self, DiffLine};
 use crate::git;
 use crate::herdr::Context;
-use crate::highlight::{Highlighter, Span};
+use crate::highlight::{Highlighter, Palette, Span};
 use crate::tree::Tree;
 
 /// Which panel takes keyboard input.
@@ -161,6 +161,8 @@ pub struct App {
     pub doc: Option<Document>,
     pub focus: Focus,
     pub highlighter: Highlighter,
+    /// UI chrome colors derived from the active theme (borders, tree, gutter, status).
+    pub palette: Palette,
     pub should_quit: bool,
     pub status: String,
 }
@@ -170,12 +172,14 @@ impl App {
     pub fn new(context: Context, highlighter: Highlighter) -> Self {
         let root = context.cwd.clone();
         let status = context.summary();
+        let palette = highlighter.palette();
         Self {
             context,
             tree: Tree::new(root),
             doc: None,
             focus: Focus::Tree,
             highlighter,
+            palette,
             should_quit: false,
             status,
         }
